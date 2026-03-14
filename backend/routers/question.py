@@ -19,6 +19,7 @@ from backend.models.schemas import (
 )
 from backend.services import llm
 from backend.services import rag
+from backend.services import prompts
 
 router = APIRouter()
 
@@ -33,10 +34,31 @@ async def question_generate(body: QuestionGenerateRequest):
     可选从 kb_id 检索相关上下文，结合 topic、difficulty 调用 LLM 生成 count 道题；
     题目持久化到 data/user/ 或会话，返回 question_id 列表与题目内容。
     """
-    # TODO: 若 body.kb_id：rag.query 取 context
-    # TODO: prompt = f"根据以下内容/主题 {body.topic}，难度 {body.difficulty}，生成 {body.count} 道题..."
-    # TODO: questions = llm.chat(...)；解析为结构化题目列表并存储
-    return SuccessResponse(data={"questions": []})
+    context = ""
+    if body.kb_id:
+        results = await rag.query(body.kb_id, body.topic or "生成题目", top_k=5)
+        context = "\n\n".join([r.get("text", "") for r in results])
+
+    system_prompt = prompts.get_system_prompt("question_generator")
+    user_prompt = prompts.format_user_prompt(
+        "question_generate",
+        context=context or "无特定知识内容",
+        topic=body.topic or "综合",
+        difficulty=body.difficulty or "中等",
+        count=body.count or 3,
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        result = await llm.chat(messages)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"生成题目失败: {str(e)}")
+
+    return SuccessResponse(data={"questions": [], "raw": result})
 
 
 @router.post(
@@ -48,13 +70,29 @@ async def question_submit(body: QuestionSubmitRequest):
     """
     根据 question_id 取原题与参考答案，用 LLM 批改用户 answer，返回对错、得分、解析、citations。
     """
-    # TODO: 取题目与标准答案/要点
-    # TODO: llm.chat([...], "请批改以下答案并给出解析") → 解析 JSON 或文本
+    system_prompt = prompts.get_system_prompt("answer_grader")
+    user_prompt = prompts.format_user_prompt(
+        "answer_grade",
+        question=body.question or "",
+        user_answer=body.answer or "",
+        reference_answer=body.reference_answer or "",
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        result = await llm.chat(messages)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"批改失败: {str(e)}")
+
     return SuccessResponse(
         data={
             "correct": False,
             "score": 0,
-            "feedback": "",
+            "feedback": result,
             "citations": [],
         }
     )

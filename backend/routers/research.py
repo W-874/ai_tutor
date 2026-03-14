@@ -13,6 +13,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.models.schemas import ResearchStartRequest, WSMessage
 from backend.services import llm
+from backend.services import prompts
 
 router = APIRouter()
 
@@ -27,8 +28,9 @@ async def research_start(body: ResearchStartRequest):
     创建研究任务，返回 task_id；后台执行多阶段：检索/分析 → 综合 → 撰写报告。
     前端用 task_id 连 WebSocket 收进度与结果。
     """
-    # TODO: task_id = 生成；将任务入队或写 state
-    return {"task_id": "", "success": True}
+    import uuid
+    task_id = str(uuid.uuid4())
+    return {"task_id": task_id, "success": True}
 
 
 @router.websocket("/stream/{task_id}")
@@ -39,9 +41,11 @@ async def research_stream(websocket: WebSocket, task_id: str):
     """
     await websocket.accept()
     try:
-        # TODO: 根据 task_id 取主题，执行 research → synthesis → writing
-        # TODO: 每阶段推送 {"type":"progress","percentage":x,"stage":"..."}
-        # TODO: 推送阶段报告与最终 content；type=done
+        system_prompt = prompts.get_system_prompt("research_assistant")
+        await websocket.send_text(json.dumps({
+            "type": "system",
+            "content": system_prompt
+        }))
         await websocket.send_text(json.dumps({"type": "done", "content": ""}))
     except WebSocketDisconnect:
         pass

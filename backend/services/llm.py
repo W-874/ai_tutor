@@ -1,6 +1,6 @@
 """
 统一 LLM 调用层：从 backend.config 读取配置，调用 OpenAI 兼容接口（含 Silicon Flow）。
-支持流式与非流式，配置来自 app_config.yaml / data/user/config.json / 环境变量。
+支持流式与非流式，配置来自 config.py / data/user/config.json / 环境变量。
 """
 from typing import AsyncGenerator, List, Optional
 
@@ -21,7 +21,7 @@ async def chat(
     """
     cfg = get_settings().llm
     if not cfg.api_key:
-        raise ValueError("未配置 LLM API Key，请在 app_config.yaml 或环境变量 LLM_API_KEY 中设置")
+        raise ValueError("未配置 LLM API Key，请在环境变量 LLM_API_KEY 中设置")
     url = f"{cfg.base_url.rstrip('/')}/chat/completions"
     payload = {
         "model": model or cfg.model,

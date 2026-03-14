@@ -11,6 +11,7 @@ import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.models.schemas import GuideStartRequest
+from backend.services import prompts
 
 router = APIRouter()
 
@@ -25,8 +26,9 @@ async def guide_start(body: GuideStartRequest):
     根据 notebook_id 读取笔记本内容，用 LLM 生成学习路径与第一步；
     创建 guide 会话，返回 session_id 供 WebSocket 连接。
     """
-    # TODO: 取笔记本内容；LLM 生成路径与第一步；写 session；返回 session_id
-    return {"session_id": "", "success": True}
+    import uuid
+    session_id = str(uuid.uuid4())
+    return {"session_id": session_id, "success": True}
 
 
 @router.websocket("/stream/{session_id}")
@@ -37,7 +39,11 @@ async def guide_stream(websocket: WebSocket, session_id: str):
     """
     await websocket.accept()
     try:
-        # TODO: 根据 session_id 维护状态；收消息 → LLM 生成下一步 → send_text(JSON)
+        system_prompt = prompts.get_system_prompt("guide_tutor")
+        await websocket.send_text(json.dumps({
+            "type": "system",
+            "content": system_prompt
+        }))
         await websocket.send_text(json.dumps({"type": "done", "content": ""}))
     except WebSocketDisconnect:
         pass

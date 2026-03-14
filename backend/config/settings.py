@@ -1,19 +1,24 @@
 """
 统一配置：LLM、Embedding（Silicon Flow BGE）、RAG、GraphRAG 等。
-加载顺序：app_config.yaml -> data/user/config.json -> 环境变量（后者覆盖前者）。
+加载顺序：config.py -> data/user/config.json -> 环境变量（后者覆盖前者）。
 """
 import json
 from pathlib import Path
 from typing import Optional
 
-import yaml
 from pydantic import BaseModel, Field
 
+from backend.config.config import (
+    EMBEDDING_CONFIG,
+    LLM_CONFIG,
+    RERANK_CONFIG,
+    RAG_CONFIG,
+    GRAPH_RAG_CONFIG,
+)
 
-# 项目根与 config 目录
+
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _PROJECT_ROOT = _BACKEND_DIR.parent
-_CONFIG_FILE = _BACKEND_DIR / "config" / "app_config.yaml"
 _RUNTIME_CONFIG_FILE = _PROJECT_ROOT / "data" / "user" / "config.json"
 
 
@@ -39,15 +44,29 @@ class LLMConfig(BaseModel):
     timeout: float = Field(default=120.0, description="请求超时秒数")
 
 
+class RerankConfig(BaseModel):
+    """重排序 API 配置（Silicon Flow BAAI/bge-reranker-v2-m3）。"""
+    provider: str = "silicon_flow"
+    base_url: str = Field(default="https://api.siliconflow.cn/v1", description="Silicon Flow API 根地址")
+    api_key: str = Field(default="", description="Silicon Flow API Key")
+    model: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        description="重排序模型名，如 BAAI/bge-reranker-v2-m3",
+    )
+    timeout: float = Field(default=60.0, description="请求超时秒数")
+    enabled: bool = Field(default=True, description="是否启用重排序")
+
+
 class RAGConfig(BaseModel):
     """RAG 检索与知识库配置。"""
     chunk_size: int = Field(default=512, description="切块最大字符/ token 数")
     chunk_overlap: int = Field(default=50, description="块重叠")
     vector_top_k: int = Field(default=10, description="向量检索 top-k")
     bm25_top_k: int = Field(default=10, description="BM25 检索 top-k")
-    hybrid_top_k: int = Field(default=5, description="混合检索最终返回条数")
+    hybrid_top_k: int = Field(default=10, description="混合检索后重排序前条数")
+    rerank_top_k: int = Field(default=5, description="重排序后返回条数")
     rrf_k: int = Field(default=60, description="RRF 常数 k，用于融合向量与 BM25 排序")
-    # 向量库持久化路径相对于 data 目录
+    use_rerank: bool = Field(default=True, description="是否启用重排序")
     persist_chroma_path: str = Field(default="knowledge_bases", description="Chroma 持久化子目录名")
     persist_bm25_filename: str = Field(default="bm25_index.pkl", description="BM25 索引文件名")
 
@@ -63,21 +82,12 @@ class GraphRAGConfig(BaseModel):
 
 class AppConfig(BaseModel):
     """应用总配置。"""
-    # 数据目录（绝对路径）
     data_root: Path = Field(default_factory=lambda: _PROJECT_ROOT / "data")
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     rag: RAGConfig = Field(default_factory=RAGConfig)
+    rerank: RerankConfig = Field(default_factory=RerankConfig)
     graph_rag: GraphRAGConfig = Field(default_factory=GraphRAGConfig)
-
-
-def _load_yaml_config() -> dict:
-    """从 app_config.yaml 加载覆盖项（仅顶层 key：embedding, llm, rag, graph_rag）。"""
-    if not _CONFIG_FILE.exists():
-        return {}
-    with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return data or {}
 
 
 def _load_runtime_config() -> dict:
@@ -89,28 +99,6 @@ def _load_runtime_config() -> dict:
             return json.load(f)
     except Exception:
         return {}
-
-
-def _apply_env_to_config() -> dict:
-    """从环境变量读取覆盖项。键与 Pydantic 一致，如 EMBEDDING_API_KEY、LLM_MODEL。"""
-    import os
-    env = os.environ
-    out = {}
-    # Embedding
-    if env.get("EMBEDDING_BASE_URL"):
-        out.setdefault("embedding", {})["base_url"] = env["EMBEDDING_BASE_URL"]
-    if env.get("EMBEDDING_API_KEY"):
-        out.setdefault("embedding", {})["api_key"] = env["EMBEDDING_API_KEY"]
-    if env.get("EMBEDDING_MODEL"):
-        out.setdefault("embedding", {})["model"] = env["EMBEDDING_MODEL"]
-    # LLM
-    if env.get("LLM_BASE_URL"):
-        out.setdefault("llm", {})["base_url"] = env["LLM_BASE_URL"]
-    if env.get("LLM_API_KEY"):
-        out.setdefault("llm", {})["api_key"] = env["LLM_API_KEY"]
-    if env.get("LLM_MODEL"):
-        out.setdefault("llm", {})["model"] = env["LLM_MODEL"]
-    return out
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -127,16 +115,21 @@ _settings: Optional[AppConfig] = None
 
 
 def get_settings() -> AppConfig:
-    """单例获取配置；YAML -> runtime config.json -> 环境变量。"""
+    """单例获取配置；config.py -> runtime config.json。"""
     global _settings
     if _settings is not None:
         return _settings
-    yaml_data = _load_yaml_config()
+    config_data = {
+        "embedding": EMBEDDING_CONFIG.copy(),
+        "llm": LLM_CONFIG.copy(),
+        "rerank": RERANK_CONFIG.copy(),
+        "rag": RAG_CONFIG.copy(),
+        "graph_rag": GRAPH_RAG_CONFIG.copy(),
+    }
     runtime_data = _load_runtime_config()
-    env_data = _apply_env_to_config()
-    merged = _deep_merge(yaml_data.copy(), runtime_data)
-    merged = _deep_merge(merged, env_data)
-    _settings = AppConfig(**merged)
+    if runtime_data:
+        config_data = _deep_merge(config_data, runtime_data)
+    _settings = AppConfig(**config_data)
     return _settings
 
 

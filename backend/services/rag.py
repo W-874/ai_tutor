@@ -1,5 +1,5 @@
 """
-RAG：Silicon Flow BGE 向量检索 + BM25 关键词检索，混合 RRF 融合。
+RAG：Silicon Flow BGE 向量检索 + BM25 关键词检索，混合 RRF 融合 + BGE 重排序。
 向量库与 BM25 索引均本地持久化（Chroma 存盘、BM25 pickle）。
 """
 from pathlib import Path
@@ -15,6 +15,7 @@ from rank_bm25 import BM25Okapi
 
 from backend.config import get_settings
 from backend.services import embedding as embedding_svc
+from backend.services import reranker as reranker_svc
 
 
 def _data_root() -> Path:
@@ -239,14 +240,17 @@ async def query(
     kb_id: str,
     question: str,
     top_k: Optional[int] = None,
+    use_rerank: Optional[bool] = None,
 ) -> List[dict]:
     """
-    混合检索：BGE 向量 + BM25，RRF 融合后返回 top_k 条。
+    混合检索：BGE 向量 + BM25，RRF 融合后进行 BGE 重排序，返回 top_k 条。
     每条 {"id","text","source","score"}。
     """
     settings = get_settings()
     rag_cfg = settings.rag
     k = top_k or rag_cfg.hybrid_top_k
+    enable_rerank = use_rerank if use_rerank is not None else rag_cfg.use_rerank
+    rerank_top_k = rag_cfg.rerank_top_k
 
     kb_path = _kb_dir(kb_id)
     if not kb_path.exists() or not _index_path(kb_id).exists():
@@ -283,11 +287,45 @@ async def query(
     # RRF 融合
     merged_ids = _rrf_merge(vector_tuples, bm25_tuples, k=rag_cfg.rrf_k)[:k]
 
-    # 组装 text/source：从 Chroma 或 chunks_meta 取
+    # 组装 text/source：从 chunks_meta 取
     with open(_chunks_meta_path(kb_id), "r", encoding="utf-8") as f:
         meta_list = json.load(f)
     meta_by_id = {m["id"]: m for m in meta_list}
 
+    # 构建待重排序的文档列表
+    candidate_docs = []
+    candidate_ids = []
+    for cid in merged_ids:
+        m = meta_by_id.get(cid, {})
+        candidate_docs.append(m.get("text", ""))
+        candidate_ids.append(cid)
+
+    # 重排序
+    if enable_rerank and candidate_docs and settings.rerank.enabled:
+        try:
+            rerank_results = await reranker_svc.rerank(
+                query=question,
+                documents=candidate_docs,
+                top_n=rerank_top_k,
+            )
+            # 根据重排序结果构建最终结果
+            results = []
+            for r in rerank_results:
+                idx = r.get("index")
+                if idx is not None and 0 <= idx < len(candidate_ids):
+                    cid = candidate_ids[idx]
+                    m = meta_by_id.get(cid, {})
+                    results.append({
+                        "id": cid,
+                        "text": m.get("text", ""),
+                        "source": m.get("source", ""),
+                        "score": r.get("relevance_score", 0.0),
+                    })
+            return results
+        except Exception:
+            pass
+
+    # 未使用重排序或重排序失败时，返回原始 RRF 结果
     results = []
     for cid in merged_ids:
         m = meta_by_id.get(cid, {})
@@ -297,7 +335,7 @@ async def query(
             "source": m.get("source", ""),
             "score": 0.92,
         })
-    return results
+    return results[:rerank_top_k]
 
 
 def list_knowledge_bases() -> List[dict]:

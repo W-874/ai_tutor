@@ -18,7 +18,7 @@ async def embed_texts(texts: Union[str, List[str]]) -> List[List[float]]:
     settings = get_settings()
     cfg = settings.embedding
     if not cfg.api_key:
-        raise ValueError("未配置 Embedding API Key，请在 app_config.yaml 或环境变量 EMBEDDING_API_KEY 中设置")
+        raise ValueError("未配置 Embedding API Key，请在环境变量 EMBEDDING_API_KEY 中设置")
 
     if isinstance(texts, str):
         texts = [texts]

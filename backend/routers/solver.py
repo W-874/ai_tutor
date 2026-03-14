@@ -16,6 +16,7 @@ from backend.models.schemas import SolverChatRequest, SolverChatResponse, WSMess
 from backend.services import session as session_svc
 from backend.services import llm
 from backend.services import rag
+from backend.services import prompts
 
 router = APIRouter()
 
@@ -31,11 +32,37 @@ async def solver_chat(body: SolverChatRequest):
     可选根据 kb_id 做 RAG 检索，再调用 LLM；
     返回 session_id 与 task_id，前端用 session_id 连 WebSocket 收流式结果。
     """
-    # TODO: session_id = body.session_id or 生成新 ID
-    # TODO: session_svc.append_message(session_id, "user", body.message)
-    # TODO: 若 body.kb_id：rag.query(kb_id, body.message) 得到 context，拼进 prompt
-    # TODO: 将“待回复”任务放入队列或标记，供 WebSocket 消费
-    return SolverChatResponse(session_id="", task_id="")
+    session_id = body.session_id
+    if not session_id:
+        import uuid
+        session_id = str(uuid.uuid4())
+
+    session_svc.append_message(session_id, "user", body.message)
+
+    context = ""
+    if body.kb_id:
+        results = await rag.query(body.kb_id, body.message)
+        if results:
+            context = "\n\n".join([
+                f"【来源: {r.get('source', '未知')}】\n{r.get('text', '')}"
+                for r in results
+            ])
+
+    system_prompt = prompts.get_system_prompt("solver")
+    if context:
+        user_prompt = prompts.format_user_prompt(
+            "rag_answer",
+            context=context,
+            question=body.message,
+        )
+    else:
+        user_prompt = body.message
+
+    messages = session_svc.get_messages(session_id)
+    messages.insert(0, {"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": user_prompt})
+
+    return SolverChatResponse(session_id=session_id, task_id=session_id)
 
 
 @router.websocket("/stream/{session_id}")
@@ -51,9 +78,32 @@ async def solver_stream(websocket: WebSocket, session_id: str):
     """
     await websocket.accept()
     try:
-        # TODO: session = session_svc.get_session(session_id)
-        # TODO: async for chunk in llm.chat(..., stream=True): 组装 WSMessage，send_text(json.dumps(...))
-        # TODO: 最后发送 type=done，并 session_svc.append_message(session_id, "assistant", full_content)
+        session = session_svc.get_session(session_id)
+        if not session:
+            await websocket.send_text(
+                json.dumps({"type": "error", "content": "会话不存在"})
+            )
+            return
+
+        messages = session.get("messages", [])
+        if not messages:
+            await websocket.send_text(
+                json.dumps({"type": "error", "content": "会话无消息"})
+            )
+            return
+
+        system_prompt = prompts.get_system_prompt("solver")
+        full_messages = [{"role": "system", "content": system_prompt}]
+        full_messages.extend(messages)
+
+        async for chunk in llm.chat(full_messages, stream=True):
+            await websocket.send_text(
+                json.dumps({"type": "answer", "delta": chunk})
+            )
+
+        full_content = "".join(session.get("content", []))
+        session_svc.append_message(session_id, "assistant", full_content)
+
         await websocket.send_text(
             json.dumps({"type": "done", "content": ""})
         )
