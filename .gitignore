@@ -49,3 +49,11 @@ node_modules/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Flutter frontend generated artifacts
+ai_tutor/.dart_tool/
+ai_tutor/build/
+ai_tutor/.dist/
+ai_tutor/android/.gradle/
+ai_tutor/**/flutter/ephemeral/
+ai_tutor/**/.plugin_symlinks/

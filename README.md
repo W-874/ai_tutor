@@ -1,4 +1,4 @@
-# AI辅助教学系统
+﻿# ai_tutor
 
 基于LightRAG、FastAPI和Streamlit的智能教学平台。
 

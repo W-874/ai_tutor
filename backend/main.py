@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -11,7 +11,7 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(
-    title="AI Tutor API",
+    title="ai_tutor API",
     description="AI辅助教学系统API",
     version="1.0.0",
     lifespan=lifespan
@@ -33,7 +33,7 @@ app.include_router(learning.router)
 @app.get("/")
 async def root():
     return {
-        "message": "AI Tutor API",
+        "message": "ai_tutor API",
         "version": "1.0.0",
         "status": "running"
     }
@@ -41,3 +41,4 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
