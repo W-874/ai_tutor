@@ -45,7 +45,15 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final List<String> references;
-  ChatMessage({required this.text, required this.isUser, this.references = const []});
+  final String? studioAction;
+  final String? capabilityNote;
+  ChatMessage({
+    required this.text,
+    required this.isUser,
+    this.references = const [],
+    this.studioAction,
+    this.capabilityNote,
+  });
 }
 
 // 新增笔记本数据模型
@@ -802,6 +810,15 @@ class _NotebookHomeState extends State<NotebookHome> {
         _isGeneratingStudio = false;
         _activeStudioTool = null;
         _centerMode = CenterViewMode.chat;
+        if (action == 'report') {
+          _messages.add(ChatMessage(
+            text: reply,
+            isUser: false,
+            studioAction: 'report',
+            capabilityNote: note,
+          ));
+          return;
+        }
         _messages.add(ChatMessage(
           text: reply.isEmpty ? "🎉 您的【${_studioActionLabel(action)}】已经生成完毕。" : "$note\n\n$reply",
           isUser: false,
@@ -1895,6 +1912,52 @@ class _NotebookHomeState extends State<NotebookHome> {
   // 聊天气泡
   Widget _buildChatBubble(ChatMessage message) {
     bool isUser = message.isUser;
+    if (!isUser && message.studioAction == 'report') {
+      final note = (message.capabilityNote ?? '').trim();
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.45),
+          decoration: BoxDecoration(
+            color: const Color(0xFF242629),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withOpacity(0.12)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Report',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Generated from the selected document',
+                style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                message.text,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+              if (note.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  note,
+                  style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.55)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
