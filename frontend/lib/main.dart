@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 void main() {
   runApp(const NotebookLMApp());
@@ -90,6 +92,8 @@ class _NotebookHomeState extends State<NotebookHome> {
   String? _learningContent;
   Map<String, dynamic>? _studioGraphPayload;
   String? _studioGraphLabel;
+  final GlobalKey _graphExportKey = GlobalKey();
+  bool _isExportingGraph = false;
 
   bool _isGeneratingQuiz = false;
   bool _isSubmittingQuiz = false;
@@ -1497,6 +1501,52 @@ class _NotebookHomeState extends State<NotebookHome> {
     return parsed;
   }
 
+  Future<void> _exportGraphAsPng() async {
+    if (_isExportingGraph) return;
+    setState(() => _isExportingGraph = true);
+
+    try {
+      final boundary = _graphExportKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw Exception('未找到可导出的图谱画布。');
+      }
+
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        throw Exception('图谱导出失败：无法生成图片字节流。');
+      }
+      final bytes = byteData.buffer.asUint8List();
+
+      final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final filename = 'knowledge_graph_${_studioGraphLabel ?? 'export'}_$ts.png';
+
+      final saveResult = await FilePicker.platform.saveFile(
+        dialogTitle: '导出知识图谱',
+        fileName: filename,
+        bytes: bytes,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            saveResult == null
+                ? '已取消导出'
+                : '导出成功：$filename',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      await _showError(error);
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingGraph = false);
+      }
+    }
+  }
+
   Widget _buildStudioGraphView() {
     final payload = _studioGraphPayload;
     if (payload == null) {
@@ -1542,9 +1592,27 @@ class _NotebookHomeState extends State<NotebookHome> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Text(
-              '知识图谱：${_studioGraphLabel ?? ''}（节点 ${nodes.length} / 边 ${edges.length}）',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '知识图谱：${_studioGraphLabel ?? ''}（节点 ${nodes.length} / 边 ${edges.length}）',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _isExportingGraph ? null : _exportGraphAsPng,
+                  icon: _isExportingGraph
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_outlined, size: 16),
+                  label: const Text('导出 PNG'),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -1556,12 +1624,15 @@ class _NotebookHomeState extends State<NotebookHome> {
                   minScale: 0.3,
                   maxScale: 4,
                   constrained: false,
-                  child: CustomPaint(
-                    size: size,
-                    painter: _KnowledgeGraphPainter(
-                      nodes: nodes,
-                      edges: edges,
-                      positions: positions,
+                  child: RepaintBoundary(
+                    key: _graphExportKey,
+                    child: CustomPaint(
+                      size: size,
+                      painter: _KnowledgeGraphPainter(
+                        nodes: nodes,
+                        edges: edges,
+                        positions: positions,
+                      ),
                     ),
                   ),
                 ),
