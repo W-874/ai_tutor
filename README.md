@@ -62,6 +62,19 @@ pip install -r requirements.txt
 
 3. 确保LightRAG服务正在运行
 
+## 一键启动与结束（Windows PowerShell）
+
+在项目根目录执行：
+
+```powershell
+# 一键启动（Ollama + LightRAG + backend + Flutter frontend）
+powershell -ExecutionPolicy Bypass -File .\start_all.ps1
+
+# 一键结束（仅结束本项目进程 + docker compose down）
+# 不会停止 Ollama 进程，也不会停止 Docker Desktop/Engine
+powershell -ExecutionPolicy Bypass -File .\stop_all.ps1
+```
+
 ### 启动应用
 
 **Windows:**

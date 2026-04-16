@@ -99,7 +99,7 @@ function Update-EnvFile {
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendRoot = $repoRoot
-$flutterRoot = Join-Path $repoRoot "ai_tutor"
+$flutterRoot = Join-Path $repoRoot "frontend"
 $envFile = Join-Path $repoRoot ".env"
 
 if (-not (Test-Path $backendRoot)) { throw "Missing directory: $backendRoot" }
