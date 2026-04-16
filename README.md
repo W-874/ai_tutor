@@ -67,13 +67,53 @@ pip install -r requirements.txt
 在项目根目录执行：
 
 ```powershell
-# 一键启动（Ollama + LightRAG + backend + Flutter frontend）
+# 一键启动（默认 Ollama + LightRAG + backend + Flutter frontend）
 powershell -ExecutionPolicy Bypass -File .\start_all.ps1
 
 # 一键结束（仅结束本项目进程 + docker compose down）
 # 不会停止 Ollama 进程，也不会停止 Docker Desktop/Engine
 powershell -ExecutionPolicy Bypass -File .\stop_all.ps1
 ```
+
+### 模型提供方模式（Ollama / OpenAI-compatible）
+
+`start_all.ps1` 现支持 `-ModelProvider ollama`（默认）和 `-ModelProvider openai-compatible` 两种模式。
+
+重要说明：
+- API key 相关变量名需与当前 LightRAG 镜像版本匹配。
+- 本项目当前按 LightRAG 官方 `env.example` 使用 `LLM_BINDING_API_KEY` 和 `EMBEDDING_BINDING_API_KEY`。
+- 官方参考（请以你实际拉取的镜像版本为准）：https://github.com/HKUDS/LightRAG/blob/main/env.example
+
+Ollama 模式（默认）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_all.ps1
+
+# 或显式指定
+powershell -ExecutionPolicy Bypass -File .\start_all.ps1 `
+  -ModelProvider ollama `
+  -OllamaLlmModel gemma4:26b `
+  -OllamaEmbeddingModel nomic-embed-text
+```
+
+OpenAI-compatible 模式：
+
+```powershell
+# 先在当前终端注入 key（不要写入仓库）
+$env:LLM_BINDING_API_KEY = "<your-llm-api-key>"
+$env:EMBEDDING_BINDING_API_KEY = "<your-embedding-api-key>"
+
+powershell -ExecutionPolicy Bypass -File .\start_all.ps1 `
+  -ModelProvider openai-compatible `
+  -OpenAICompatibleLlmHost "https://<your-base-url>" `
+  -OpenAICompatibleLlmModel "<your-llm-model>" `
+  -OpenAICompatibleEmbeddingHost "https://<your-embedding-base-url>" `
+  -OpenAICompatibleEmbeddingModel "<your-embedding-model>"
+```
+
+说明：
+- OpenAI-compatible 模式下，如未通过参数传入 host/model，脚本会尝试读取环境变量：`LLM_BINDING_HOST`、`LLM_MODEL`、`EMBEDDING_BINDING_HOST`、`EMBEDDING_MODEL`。
+- 若缺少 `LLM_BINDING_API_KEY` 或 `EMBEDDING_BINDING_API_KEY`，脚本会直接报错并停止，不会静默失败。
 
 ### 启动应用
 

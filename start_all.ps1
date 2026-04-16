@@ -1,7 +1,12 @@
 param(
     [string]$CondaEnv = "aitutor-backend",
+    [string]$ModelProvider = "ollama",
     [string]$OllamaLlmModel = "gemma4:26b",
     [string]$OllamaEmbeddingModel = "nomic-embed-text",
+    [string]$OpenAICompatibleLlmHost = "",
+    [string]$OpenAICompatibleLlmModel = "",
+    [string]$OpenAICompatibleEmbeddingHost = "",
+    [string]$OpenAICompatibleEmbeddingModel = "",
     [string]$FlutterDevice = "chrome"
 )
 
@@ -105,36 +110,92 @@ $envFile = Join-Path $repoRoot ".env"
 if (-not (Test-Path $backendRoot)) { throw "Missing directory: $backendRoot" }
 if (-not (Test-Path $flutterRoot)) { throw "Missing directory: $flutterRoot" }
 
-foreach ($cmd in @("ollama", "docker", "python", "flutter")) {
+if ([string]::IsNullOrWhiteSpace($ModelProvider)) {
+    throw "ModelProvider is required. Use 'ollama' or 'openai-compatible'."
+}
+$provider = $ModelProvider.Trim().ToLower()
+if ($provider -ne "ollama" -and $provider -ne "openai-compatible") {
+    throw "Unsupported ModelProvider '$ModelProvider'. Allowed values: ollama, openai-compatible."
+}
+
+$requiredCommands = @("docker", "python", "flutter")
+if ($provider -eq "ollama") {
+    $requiredCommands += "ollama"
+}
+foreach ($cmd in $requiredCommands) {
     if (-not (Test-CommandExists $cmd)) {
         throw "Command not found: $cmd. Please install and add to PATH."
     }
 }
 
-Write-Host "[1/6] Checking Docker and Ollama..."
+Write-Host "[1/6] Checking Docker..."
 Ensure-DockerReady
-Ensure-OllamaReady
 
-Write-Host "[2/6] Pulling Ollama models..."
-ollama pull $OllamaLlmModel
-ollama pull $OllamaEmbeddingModel
+if ($provider -eq "ollama") {
+    Write-Host "[2/6] Checking Ollama and pulling models..."
+    Ensure-OllamaReady
+    ollama pull $OllamaLlmModel
+    ollama pull $OllamaEmbeddingModel
+} else {
+    Write-Host "[2/6] Using OpenAI-compatible provider (skip Ollama checks)."
+}
 
 Write-Host "[3/6] Updating LightRAG .env ..."
-Update-EnvFile -FilePath $envFile -Values @{
-    "LLM_BINDING" = "ollama"
-    "LLM_BINDING_HOST" = "http://host.docker.internal:11434"
-    "LLM_MODEL" = $OllamaLlmModel
-    "OLLAMA_LLM_NUM_CTX" = "8192"
-    "OLLAMA_LLM_NUM_PREDICT" = "1024"
-    "EMBEDDING_BINDING" = "ollama"
-    "EMBEDDING_BINDING_HOST" = "http://host.docker.internal:11434"
-    "EMBEDDING_MODEL" = $OllamaEmbeddingModel
-    "EMBEDDING_DIM" = "768"
+$envUpdates = @{
     "LLM_TIMEOUT" = "900"
     "MAX_ASYNC" = "1"
     "MAX_PARALLEL_INSERT" = "1"
     "SUMMARY_LANGUAGE" = "Chinese"
 }
+
+if ($provider -eq "ollama") {
+    $envUpdates["LLM_BINDING"] = "ollama"
+    $envUpdates["LLM_BINDING_HOST"] = "http://host.docker.internal:11434"
+    $envUpdates["LLM_MODEL"] = $OllamaLlmModel
+    $envUpdates["OLLAMA_LLM_NUM_CTX"] = "8192"
+    $envUpdates["OLLAMA_LLM_NUM_PREDICT"] = "1024"
+    $envUpdates["EMBEDDING_BINDING"] = "ollama"
+    $envUpdates["EMBEDDING_BINDING_HOST"] = "http://host.docker.internal:11434"
+    $envUpdates["EMBEDDING_MODEL"] = $OllamaEmbeddingModel
+    $envUpdates["EMBEDDING_DIM"] = "768"
+} else {
+    $llmHost = if (-not [string]::IsNullOrWhiteSpace($OpenAICompatibleLlmHost)) { $OpenAICompatibleLlmHost } else { $env:LLM_BINDING_HOST }
+    $llmModel = if (-not [string]::IsNullOrWhiteSpace($OpenAICompatibleLlmModel)) { $OpenAICompatibleLlmModel } else { $env:LLM_MODEL }
+    $embeddingHost = if (-not [string]::IsNullOrWhiteSpace($OpenAICompatibleEmbeddingHost)) { $OpenAICompatibleEmbeddingHost } else { $env:EMBEDDING_BINDING_HOST }
+    $embeddingModel = if (-not [string]::IsNullOrWhiteSpace($OpenAICompatibleEmbeddingModel)) { $OpenAICompatibleEmbeddingModel } else { $env:EMBEDDING_MODEL }
+    $llmApiKey = $env:LLM_BINDING_API_KEY
+    $embeddingApiKey = $env:EMBEDDING_BINDING_API_KEY
+
+    if ([string]::IsNullOrWhiteSpace($llmHost)) {
+        throw "ModelProvider=openai-compatible requires LLM host. Pass -OpenAICompatibleLlmHost or set env var LLM_BINDING_HOST."
+    }
+    if ([string]::IsNullOrWhiteSpace($llmModel)) {
+        throw "ModelProvider=openai-compatible requires LLM model. Pass -OpenAICompatibleLlmModel or set env var LLM_MODEL."
+    }
+    if ([string]::IsNullOrWhiteSpace($embeddingHost)) {
+        throw "ModelProvider=openai-compatible requires embedding host. Pass -OpenAICompatibleEmbeddingHost or set env var EMBEDDING_BINDING_HOST."
+    }
+    if ([string]::IsNullOrWhiteSpace($embeddingModel)) {
+        throw "ModelProvider=openai-compatible requires embedding model. Pass -OpenAICompatibleEmbeddingModel or set env var EMBEDDING_MODEL."
+    }
+    if ([string]::IsNullOrWhiteSpace($llmApiKey)) {
+        throw "ModelProvider=openai-compatible requires env var LLM_BINDING_API_KEY. Do not hardcode keys in script."
+    }
+    if ([string]::IsNullOrWhiteSpace($embeddingApiKey)) {
+        throw "ModelProvider=openai-compatible requires env var EMBEDDING_BINDING_API_KEY. Do not hardcode keys in script."
+    }
+
+    $envUpdates["LLM_BINDING"] = "openai"
+    $envUpdates["LLM_BINDING_HOST"] = $llmHost
+    $envUpdates["LLM_MODEL"] = $llmModel
+    $envUpdates["LLM_BINDING_API_KEY"] = $llmApiKey
+    $envUpdates["EMBEDDING_BINDING"] = "openai"
+    $envUpdates["EMBEDDING_BINDING_HOST"] = $embeddingHost
+    $envUpdates["EMBEDDING_MODEL"] = $embeddingModel
+    $envUpdates["EMBEDDING_BINDING_API_KEY"] = $embeddingApiKey
+}
+
+Update-EnvFile -FilePath $envFile -Values $envUpdates
 
 Write-Host "[4/6] Starting LightRAG (docker compose)..."
 Push-Location $repoRoot
@@ -166,7 +227,13 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", $flutterCmd
 Write-Host ""
 Write-Host "Startup sequence triggered:"
 Write-Host "- Repo Root: $repoRoot"
-Write-Host "- Ollama:   http://127.0.0.1:11434"
+Write-Host "- Model Provider: $provider"
+if ($provider -eq "ollama") {
+    Write-Host "- Ollama:   http://127.0.0.1:11434"
+} else {
+    Write-Host "- LLM Host: $llmHost"
+    Write-Host "- Emb Host: $embeddingHost"
+}
 Write-Host "- LightRAG: http://127.0.0.1:9621"
 Write-Host "- Backend:  http://127.0.0.1:8000/docs"
 Write-Host "- Flutter:  launched in a new terminal (device=$FlutterDevice)"
