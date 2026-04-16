@@ -12,7 +12,8 @@ services:
       - ./data/rag_storage:/app/data/rag_storage
       - ./data/inputs:/app/data/inputs
       - ./config.ini:/app/config.ini
-      - ./.env:/app/.env
+    env_file:
+      - .env    
     deploy:
       restart_policy:
         condition: on-failure

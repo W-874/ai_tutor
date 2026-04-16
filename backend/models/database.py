@@ -1,9 +1,12 @@
 from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
-import os
+from pathlib import Path
 
-DATABASE_URL = "sqlite:///./data/aitutor.db"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_URL = f"sqlite:///{(DATA_DIR / 'aitutor.db').as_posix()}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

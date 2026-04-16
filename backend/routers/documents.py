@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form, Q
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 import uuid
-import os
+from pathlib import Path
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -12,8 +12,9 @@ from ..services.skill_tree_builder import SkillTreeBuilder
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
-UPLOAD_DIR = "data/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+UPLOAD_DIR = PROJECT_ROOT / "data" / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 lightrag_client = LightRAGClient()
 skill_tree_builder = SkillTreeBuilder(lightrag_client)
@@ -31,13 +32,13 @@ class DocumentsRequest(BaseModel):
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        file_path = UPLOAD_DIR / file.filename
         
         with open(file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
         
-        lightrag_result = await lightrag_client.upload_document(file_path)
+        lightrag_result = await lightrag_client.upload_document(str(file_path))
         
         doc_id = lightrag_result.get("track_id", str(uuid.uuid4()))
         

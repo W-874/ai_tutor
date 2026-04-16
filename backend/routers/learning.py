@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any, AsyncGenerator
 import json
 import httpx
+import os
 
 from ..models.database import get_db, SkillNode, LearningProgress
 from ..services.lightrag_client import LightRAGClient
@@ -11,6 +12,7 @@ from ..services.lightrag_client import LightRAGClient
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
 lightrag_client = LightRAGClient()
+LIGHTRAG_BASE_URL = os.getenv("LIGHTRAG_BASE_URL", "http://localhost:9621").rstrip("/")
 
 @router.get("/query")
 async def query_knowledge(query: str, mode: str = "mix", include_references: bool = False):
@@ -33,7 +35,7 @@ async def query_knowledge_stream(request: dict):
             async with httpx.AsyncClient(timeout=300.0) as client:
                 async with client.stream(
                     "POST",
-                    f"http://localhost:9621/query/stream",
+                    f"{LIGHTRAG_BASE_URL}/query/stream",
                     json={
                         "query": query,
                         "mode": mode,

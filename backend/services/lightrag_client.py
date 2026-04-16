@@ -1,10 +1,17 @@
 import httpx
 from typing import Optional, Dict, Any, List
+import os
 
 class LightRAGClient:
-    def __init__(self, base_url: str = "http://localhost:9621"):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: Optional[str] = None):
+        resolved_url = base_url or os.getenv("LIGHTRAG_BASE_URL", "http://localhost:9621")
+        self.base_url = resolved_url.rstrip("/")
         self.client = httpx.AsyncClient(timeout=300.0)
+
+    @staticmethod
+    def _parse_response(response: httpx.Response) -> Dict[str, Any]:
+        response.raise_for_status()
+        return response.json()
     
     async def upload_document(self, file_path: str):
         with open(file_path, "rb") as f:
@@ -13,14 +20,14 @@ class LightRAGClient:
                 f"{self.base_url}/documents/upload",
                 files=files
             )
-            return response.json()
+            return self._parse_response(response)
     
     async def insert_text(self, text: str):
         response = await self.client.post(
             f"{self.base_url}/documents/text",
             json={"text": text}
         )
-        return response.json()
+        return self._parse_response(response)
     
     async def query(self, query: str, mode: str = "mix", include_references: bool = False):
         response = await self.client.post(
@@ -31,7 +38,7 @@ class LightRAGClient:
                 "include_references": include_references
             }
         )
-        return response.json()
+        return self._parse_response(response)
     
     async def query_data(self, query: str, mode: str = "local"):
         response = await self.client.post(
@@ -41,7 +48,7 @@ class LightRAGClient:
                 "mode": mode
             }
         )
-        return response.json()
+        return self._parse_response(response)
     
     async def get_knowledge_graph(self, label: str, max_depth: int = 3, max_nodes: int = 100):
         response = await self.client.get(
@@ -52,14 +59,14 @@ class LightRAGClient:
                 "max_nodes": max_nodes
             }
         )
-        return response.json()
+        return self._parse_response(response)
     
     async def search_labels(self, q: str, limit: int = 50):
         response = await self.client.get(
             f"{self.base_url}/graph/label/search",
             params={"q": q, "limit": limit}
         )
-        return response.json()
+        return self._parse_response(response)
     
     async def get_documents_paginated(
         self,
@@ -79,23 +86,23 @@ class LightRAGClient:
                 "sort_direction": sort_direction
             }
         )
-        return response.json()
+        return self._parse_response(response)
     
     async def get_documents(self) -> Dict[str, Any]:
         response = await self.client.get(f"{self.base_url}/documents")
-        return response.json()
+        return self._parse_response(response)
     
     async def get_pipeline_status(self) -> Dict[str, Any]:
         response = await self.client.get(f"{self.base_url}/documents/pipeline_status")
-        return response.json()
+        return self._parse_response(response)
     
     async def get_document_status_counts(self) -> Dict[str, Any]:
         response = await self.client.get(f"{self.base_url}/documents/status_counts")
-        return response.json()
+        return self._parse_response(response)
     
     async def get_track_status(self, track_id: str) -> Dict[str, Any]:
         response = await self.client.get(f"{self.base_url}/documents/track_status/{track_id}")
-        return response.json()
+        return self._parse_response(response)
     
     async def delete_document(self, doc_id: str) -> Dict[str, Any]:
         response = await self.client.request(
@@ -103,7 +110,7 @@ class LightRAGClient:
             f"{self.base_url}/documents/delete_document",
             json={"doc_ids": [doc_id]}
         )
-        return response.json()
+        return self._parse_response(response)
     
     async def close(self):
         await self.client.aclose()
