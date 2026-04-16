@@ -1,6 +1,6 @@
 param(
     [string]$CondaEnv = "aitutor-backend",
-    [string]$OllamaLlmModel = "qwen2.5:7b",
+    [string]$OllamaLlmModel = "gemma4:26b",
     [string]$OllamaEmbeddingModel = "nomic-embed-text",
     [string]$FlutterDevice = "chrome"
 )

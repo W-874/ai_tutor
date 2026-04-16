@@ -51,9 +51,13 @@ node_modules/
 htmlcov/
 
 # Flutter frontend generated artifacts
-ai_tutor/.dart_tool/
-ai_tutor/build/
-ai_tutor/.dist/
-ai_tutor/android/.gradle/
-ai_tutor/**/flutter/ephemeral/
-ai_tutor/**/.plugin_symlinks/
+frontend/.dart_tool/
+frontend/build/
+frontend/.dist/
+frontend/android/.gradle/
+frontend/**/flutter/ephemeral/
+frontend/**/.plugin_symlinks/
+
+# Keep Flutter source tracked
+!frontend/lib/
+!frontend/lib/**
