@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -1722,6 +1723,7 @@ class _NotebookHomeState extends State<NotebookHome> {
 
   Widget _buildChatBubble(BuildContext context, ChatMessage message) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     bool isUser = message.isUser;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -1737,14 +1739,62 @@ class _NotebookHomeState extends State<NotebookHome> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              message.text, 
-              style: TextStyle(
-                color: isUser ? colorScheme.onPrimaryContainer : colorScheme.onSurface, 
-                fontSize: 14, 
-                height: 1.5
+            if (isUser)
+              Text(
+                message.text,
+                style: TextStyle(
+                  color: colorScheme.onPrimaryContainer,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
               )
-            ),
+            else
+              MarkdownBody(
+                data: message.text,
+                selectable: true,
+                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                  p: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                  h1: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  h2: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  h3: textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  code: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontFamily: 'monospace',
+                  ),
+                  codeblockDecoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  blockquote: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.5,
+                  ),
+                  blockquoteDecoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  listBullet: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                  ),
+                  a: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.primary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
             if (message.references.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
